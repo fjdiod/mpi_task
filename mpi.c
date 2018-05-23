@@ -1,40 +1,58 @@
 #include <mpi.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+void read_matrix(FILE* file, float*** matrix) {
+    int N;
+    float tmp;
+    fscanf(file, "%d", &N);
+    *matrix = (float **)malloc(N * sizeof(float *));
+    for(int i=0; i<N; i++)
+        (*matrix)[i] = (float *)malloc(N * sizeof(float));
+    for(int i = 0; i < N; i++){
+        for(int j = 0; j < N; j++){
+             fscanf(file, "%f", &tmp);
+             (*matrix)[i][j] = tmp;
+//              printf("%f \n", matrix[i][j]);
+        }
+    }
+}
 
 int main(int argc, char** argv) {
+    
+
     MPI_Init(NULL, NULL);
     
+    //cartesian grid
+    MPI_Comm cartcomm;
+    
     int world_size;
-    MPI_Comm comm;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
     int world_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-
+    
+    
+//     float mm = malloc(sizeof(float) * 4);
     if(world_rank == 0) {
-        float mat[4] = {1,2,3,4};
-        float v[2] = {1, 2};
-        MPI_Send(&mat, 1, MPI_FLOAT, 1, 0, MPI_COMM_WORLD);
-        for(int i = 0; i < 4; i++) {
-            MPI_Send(&mat[i], 1, MPI_FLOAT, i+1, 0, MPI_COMM_WORLD);
-            MPI_Send(&v[i%2], 1, MPI_FLOAT, i+1, 0, MPI_COMM_WORLD);
-        }
+
+    FILE *fp;
+//     char buff[255];
+
+    fp = fopen("mat", "r");
+    float** matr;
+    read_matrix(fp, &matr);
+    printf("%f \n", matr[1][0]);
     }
-    if(world_rank != 0) {
-        float a;
-        float b;
-        MPI_Recv(&a, 1, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&b, 1, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        printf("M&V is %f %f\n", a, b);
-        printf("NUMBER is %f\n", a*b);
-    }
+   
     char processor_name[MPI_MAX_PROCESSOR_NAME];
     int name_len;
     MPI_Get_processor_name(processor_name, &name_len);
 
     // Print off a hello world message
-    printf("Hello world from processor %s, rank %d out of %d processors\n",
-           processor_name, world_rank, world_size);
+//     printf("Hello world from processor %s, rank %d out of %d processors\n",
+//            processor_name, world_rank, world_size);
 
     // Finalize the MPI environment.
     MPI_Finalize();
