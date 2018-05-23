@@ -13,12 +13,20 @@ int main(int argc, char** argv) {
 
     if(world_rank == 0) {
         float mat[4] = {1,2,3,4};
+        float v[2] = {1, 2};
         MPI_Send(&mat, 1, MPI_FLOAT, 1, 0, MPI_COMM_WORLD);
+        for(int i = 0; i < 4; i++) {
+            MPI_Send(&mat[i], 1, MPI_FLOAT, i+1, 0, MPI_COMM_WORLD);
+            MPI_Send(&v[i%2], 1, MPI_FLOAT, i+1, 0, MPI_COMM_WORLD);
+        }
     }
-    if(world_rank == 1) {
+    if(world_rank != 0) {
         float a;
+        float b;
         MPI_Recv(&a, 1, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        printf("NUMBER is %f", a);
+        MPI_Recv(&b, 1, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        printf("M&V is %f %f\n", a, b);
+        printf("NUMBER is %f\n", a*b);
     }
     char processor_name[MPI_MAX_PROCESSOR_NAME];
     int name_len;
