@@ -106,9 +106,6 @@ int main(int argc, char** argv) {
         printf("%d \n", mat_size);
         float* block;
         int coord[2];
-        get_block(matr, vec, 1*2, 1*2, 2, mat_size, &block, &vec_part);
-        print_block(block, 2);
-        printf("VEC %f %f \n\n", vec_part[0], vec_part[1]);
         for(int i=1; i < world_size; i++) {
             MPI_Cart_coords(cartcomm, i, 2, coord);
             printf("COORDS %d %d\n", coord[0], coord[1]);
@@ -117,7 +114,7 @@ int main(int argc, char** argv) {
             print_block(block, 2);
             printf("VEC %f %f\n", vec_part[0], vec_part[1]);
             MPI_Send(block, 4, MPI_FLOAT, i, 0, MPI_COMM_WORLD);
-            MPI_Send(vec, 2, MPI_FLOAT, i, 1, MPI_COMM_WORLD);
+            MPI_Send(vec_part, 2, MPI_FLOAT, i, 1, MPI_COMM_WORLD);
         }
     }
 
