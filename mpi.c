@@ -8,7 +8,6 @@ int get_index(int row, int column, int size){
     return row*size + column;
 }
 
-
 void read_matrix(FILE* file, float** matrix, int* mat_size) {
     int N;
     float tmp;
@@ -60,21 +59,28 @@ void print_block(float* matr, int size){
     }
 }
 
-void mat_vec_mul(float* mat, float* vec, int size, float* vec_out){
+void mat_vec_mul(float* mat, float* vec, int size, float** vec_out){
     float tmp;
+    *vec_out = (float*)malloc(size*sizeof(float));
     for(int i = 0; i < size; i++) {
         tmp = 0;
         for(int j = 0; j < size; j++) {
             tmp += mat[get_index(i, j, size)]*vec[j];
         }
-        vec_out[i] = tmp;
+        (*vec_out)[i] = tmp;
     }
 }
 
 int main(int argc, char** argv) {
-    
+    float* res;
+    float* res_reduced;
+    float* tot_res;
     int block_size;
-    float res[2];
+    int mat_size;
+    float* mat_part;
+    float* vec_part;
+    float* matr;
+
     MPI_Init(NULL, NULL);
     
     //cartesian grid
@@ -85,58 +91,83 @@ int main(int argc, char** argv) {
 
     int world_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-    
-    int dim[2] = {2, 2}, period[2] = {0, 0}, reorder = 0;
+    int grid_size = (int)sqrt(world_size);
+    int dim[2] = {grid_size, grid_size}, period[2] = {0, 0}, reorder = 0;
     MPI_Cart_create(MPI_COMM_WORLD, 2, dim, period, reorder, &cartcomm);
 //     float mm = malloc(sizeof(float) * 4);
     if(world_rank == 0) {
 
         FILE* fp;
 
-        fp = fopen("mat", "r");
-        float* matr;
+        fp = fopen("mat2", "r");
+        
         float* vec;
-        float* vec_part;
-        int mat_size;
         read_matrix(fp, &matr, &mat_size);
         FILE* fp2;
-        fp2 = fopen("vect", "r");
+        fp2 = fopen("vect2", "r");
         read_vector(fp2, &vec);
-        print_block(matr, 4);
+//         print_block(matr, mat_size);
         printf("%d \n", mat_size);
         float* block;
         int coord[2];
+        block_size = mat_size/sqrt(world_size);
+        
+
+        MPI_Cart_coords(cartcomm, 0, 2, coord);
+//         mat_part = (float*)malloc(block_size*block_size*sizeof(float));
+        get_block(matr, vec, coord[0]*block_size, coord[1]*block_size, block_size, mat_size, &block, &vec_part);
+        mat_part = block;
+        mat_vec_mul(block, vec_part, block_size, &res);
+        
         for(int i=1; i < world_size; i++) {
             MPI_Cart_coords(cartcomm, i, 2, coord);
-            printf("COORDS %d %d\n", coord[0], coord[1]);
-            get_block(matr, vec, coord[0]*2, coord[1]*2, 2, mat_size, &block, &vec_part);
-            printf("SENDING to %d\n", i);
-            print_block(block, 2);
-            printf("VEC %f %f\n", vec_part[0], vec_part[1]);
-            MPI_Send(block, 4, MPI_FLOAT, i, 0, MPI_COMM_WORLD);
-            MPI_Send(vec_part, 2, MPI_FLOAT, i, 1, MPI_COMM_WORLD);
-        }
-    }
+//             printf("COORDS %d %d\n", coord[0], coord[1]);
+            get_block(matr, vec, coord[0]*block_size, coord[1]*block_size, block_size, mat_size, &block, &vec_part);
+//               printf("SENDING to %d\n", i);
+//              print_block(block, block_size);
 
-    float* mat_part = (float*)malloc(2*2*sizeof(float));
-    float* vec_part = (float*)malloc(2*sizeof(float));
+            MPI_Send(block, block_size*block_size, MPI_FLOAT, i, 0, MPI_COMM_WORLD);
+            MPI_Send(vec_part, block_size, MPI_FLOAT, i, 1, MPI_COMM_WORLD);
+        }
+
+    }
+    MPI_Bcast(&block_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&mat_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    
+    res_reduced = (float*)malloc(block_size*sizeof(float));
+    tot_res = (float*)malloc(mat_size*sizeof(float));
+    mat_part = (float*)malloc(block_size*block_size*sizeof(float));
+    vec_part = (float*)malloc(block_size*sizeof(float));
 
     if(world_rank != 0) {
-        MPI_Recv(mat_part, 4, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(vec_part, 2, MPI_FLOAT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        printf("\nBLOCK at %d\n %f %f\n%f %f\n", world_rank, mat_part[0], mat_part[1], mat_part[2], mat_part[3]);
-        printf("VEC at %d %f %f\n",world_rank, vec_part[0], vec_part[1]);
-        
-        
-        mat_vec_mul(mat_part, vec_part, 2, res);
-        printf("RES at %d %f %f\n",world_rank, res[0], res[1]);
+ 
+        MPI_Recv(mat_part, block_size*block_size, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(vec_part, block_size*block_size, MPI_FLOAT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        mat_vec_mul(mat_part, vec_part, block_size, &res);
+
     }
 
+    int dims[2] = {0, 1};
+    int coord = 0;
+    int r;
+    MPI_Comm row_comm, col_comm;
+    MPI_Cart_sub(cartcomm, dims, &row_comm);
+    MPI_Cart_rank(row_comm, &coord, &r);
+    MPI_Reduce(res, res_reduced, block_size, MPI_FLOAT, MPI_SUM, r, row_comm);
 
-    // Print off a hello world message
-//     printf("Hello world from processor %s, rank %d out of %d processors\n",
-//            processor_name, world_rank, world_size);
+    dims[0] = 1;
+    dims[1] = 0;
+    MPI_Cart_sub(cartcomm, dims, &col_comm);
+    MPI_Cart_rank(row_comm, &coord, &r);
+    MPI_Gather(res_reduced, block_size, MPI_FLOAT, tot_res, block_size, MPI_FLOAT, r, col_comm);
+    
+    if(world_rank == 0) {
+        printf("PART OF RESULT %f %f %f %f\n", tot_res[0], tot_res[1], tot_res[2], tot_res[3]);
+        FILE* fout;
+        fout = fopen("result", "w");
+        for(int i = 0; i < mat_size; i++) fprintf(fout, "%f ", tot_res[i]);
+    }
 
-    // Finalize the MPI environment.
     MPI_Finalize();
 }
