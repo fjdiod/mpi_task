@@ -80,12 +80,14 @@ int main(int argc, char** argv) {
     float* mat_part;
     float* vec_part;
     float* matr;
-
+    double start, end;
+    double gl_start, gl_end;
     MPI_Init(NULL, NULL);
     
     //cartesian grid
     MPI_Comm cartcomm;
     
+    gl_start = MPI_Wtime();
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
@@ -117,18 +119,24 @@ int main(int argc, char** argv) {
 //         mat_part = (float*)malloc(block_size*block_size*sizeof(float));
         get_block(matr, vec, coord[0]*block_size, coord[1]*block_size, block_size, mat_size, &block, &vec_part);
         mat_part = block;
+        start = MPI_Wtime();
         mat_vec_mul(block, vec_part, block_size, &res);
+        end = MPI_Wtime();
+        printf("Time to mult 1 block is %f\n", end - start);
         
+        start = MPI_Wtime();
         for(int i=1; i < world_size; i++) {
             MPI_Cart_coords(cartcomm, i, 2, coord);
 //             printf("COORDS %d %d\n", coord[0], coord[1]);
             get_block(matr, vec, coord[0]*block_size, coord[1]*block_size, block_size, mat_size, &block, &vec_part);
 //               printf("SENDING to %d\n", i);
 //              print_block(block, block_size);
-
+//             get_index(i, j, mat_size)
             MPI_Send(block, block_size*block_size, MPI_FLOAT, i, 0, MPI_COMM_WORLD);
-            MPI_Send(vec_part, block_size, MPI_FLOAT, i, 1, MPI_COMM_WORLD);
+            MPI_Send(&vec[coord[1]*block_size], block_size, MPI_FLOAT, i, 1, MPI_COMM_WORLD);
         }
+        end = MPI_Wtime();
+        printf("Time to redistribute data is %f\n", end - start);
 
     }
     MPI_Bcast(&block_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -140,11 +148,14 @@ int main(int argc, char** argv) {
     vec_part = (float*)malloc(block_size*sizeof(float));
 
     if(world_rank != 0) {
- 
+        start = MPI_Wtime();
         MPI_Recv(mat_part, block_size*block_size, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(vec_part, block_size*block_size, MPI_FLOAT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
+        printf("Multiplication at %d\n", world_rank);
+        
         mat_vec_mul(mat_part, vec_part, block_size, &res);
+        end = MPI_Wtime();
+        printf("Multiplication time at %d is %f\n", world_rank, end - start);
 
     }
 
@@ -167,6 +178,8 @@ int main(int argc, char** argv) {
         FILE* fout;
         fout = fopen("result", "w");
         for(int i = 0; i < mat_size; i++) fprintf(fout, "%f ", tot_res[i]);
+            gl_end = MPI_Wtime();
+    printf("Total time is %f\n", gl_end - gl_start);
     }
 
     MPI_Finalize();
